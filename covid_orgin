@@ -1,0 +1,170 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat May 16 14:25:45 2020
+
+@author: ninjaac
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+#process the files remove the new line charecter and other description and create
+#list of data from the sequence from the file
+def generate_list_data(fname):
+    data=[]
+    with open(fname) as f:
+        for line in f:
+            if not line.startswith('>'):
+                line=line.rstrip("\n")
+                data.append(line)
+    return data
+
+#generate the numeric data from the charecter sequence using the natural language 
+#tool kit 
+from sklearn.feature_extraction.text import CountVectorizer
+def count_vect_data(list,target_name):
+    feature_names=[]
+    count=CountVectorizer(ngram_range=(2,4),analyzer='char',lowercase=False)
+    da=count.fit_transform(list)
+    line_count=[]
+    for i in list:
+        lenn=len(i)
+        line_count.append(lenn)
+    
+    count_df=pd.DataFrame(da.todense(),columns=count.get_feature_names())
+    count_df=count_df.apply(lambda x: x/line_count[x.name],axis=1)
+    feature_names.append(count.get_feature_names())
+    
+    #target name insersion
+    count_df['target']=target_name
+    return count_df,feature_names
+
+
+#covid19 data preprocessing
+covid19_list=generate_list_data(r'C:\Users\ninjaac\Desktop\python\dataAnalysis\covid\MN908947.3.fasta')
+covid19_df,fea_name_covid19=count_vect_data(covid19_list,"covid19")
+
+#drop the target value from the covid19 data
+covid19_df=covid19_df.drop(columns='target')
+
+#coronavirade chicken data preprocessing
+
+checken_list=generate_list_data(r'C:\Users\ninjaac\Desktop\python\dataAnalysis\covid\LR757996.1.fasta')
+checken_df,fea_name_checken=count_vect_data(checken_list,"checken")
+
+#coronavirade bats data preprocessing
+bat_list=generate_list_data(r'C:\Users\ninjaac\Desktop\python\dataAnalysis\covid\bat.fasta')
+bat_df,fea_name_bat=count_vect_data(bat_list,"bat")
+
+#coronavirade shrew data preprocessing
+shrew_list=generate_list_data(r'C:\Users\ninjaac\Desktop\python\dataAnalysis\covid\shrew.fasta')
+shrew_df,fea_name_shrew=count_vect_data(shrew_list,"shrew")
+
+#coronavirade rodent data preprocessing
+rodent_list=generate_list_data(r'C:\Users\ninjaac\Desktop\python\dataAnalysis\covid\rodent.fasta')
+rodent_df,fea_name_rodent=count_vect_data(rodent_list,"rodent")
+
+#find the diffrent colum
+diff_bat_checken=bat_df.columns.difference(checken_df.columns)
+diff_bat_shrew=bat_df.columns.difference(shrew_df.columns)
+diff_bat_rodent=bat_df.columns.difference(rodent_df.columns)
+
+diff_bat_checken==diff_bat_shrew
+"""
+array([ True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  True])"""
+
+diff_bat_shrew==diff_bat_rodent
+"""
+Out[29]: 
+array([ True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  True])"""
+
+#so these 31 colums are present in bat but not in other and aslo all values are zero
+#so drop it from bat
+bat_df=bat_df.drop(diff_bat_shrew,axis=1)
+
+#add the four datas of animals
+list_df=[checken_df,bat_df,shrew_df,rodent_df]
+dataset=pd.concat(list_df,ignore_index=True)
+#split the dataset as X and y
+X=dataset.iloc[:,:-1]
+y=dataset.iloc[:,-1]
+
+#no of animals in the dataset
+dataset['target'].value_counts()
+"""
+rodent     524
+bat        469
+shrew      452
+checken    427
+Name: target, dtype: int64"""
+
+#split the dataset
+from sklearn.model_selection import train_test_split
+X_train,X_test,y_train,y_test=train_test_split(X,y,test_size=0.25,random_state=42)
+
+
+#samples in test target
+y_test.value_counts()
+"""
+rodent     134
+bat        118
+checken    108
+shrew      108
+Name: target, dtype: int64"""
+
+#samples in the train target
+y_train.value_counts()
+"""
+Out[42]: 
+rodent     390
+bat        351
+shrew      344
+checken    319
+Name: target, dtype: int64"""
+
+#create the covid19 data set as this
+#covid19 have the same no of features that the traing dataset have
+
+
+#train the model XGBOOST
+from xgboost import XGBClassifier
+from xgboost import plot_importance
+import xgboost
+
+#randomforest classifier
+from sklearn.ensemble import RandomForestClassifier
+
+ran=RandomForestClassifier(n_estimators=20,random_state=42,n_jobs=-1)
+ran.fit(X_train,y_train)
+
+pred_y=ran.predict(X_test)
+
+from sklearn.metrics import confusion_matrix
+con=confusion_matrix(y_test, pred_y)
+from sklearn.metrics import accuracy_score
+acc=accuracy_score(y_test,pred_y) #0.6
+pre=ran.predict(covid19_df)
+
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+parameters=[{'kernel':['rbf'],'gamma':[1e-3,1e-4],'C':[1,10,100,1000]},{'kernel':['linear'],'C':[1,10,100,1000]}]
+
+grid=GridSearchCV(SVC(),parameters,cv=5,n_jobs=-1)
+#fit the model
+grid.fit(X_train,y_train)
+#feature details
+print(f"the best parameters{grid.best_params_}")
+#the best parameters{'C': 100, 'kernel': 'linear'}
+
+print(f"the best scores{grid.best_score_}")
+#the best scores0.4988603513453413
+
+print(f"the grid search results{grid.cv_results_}")
+
